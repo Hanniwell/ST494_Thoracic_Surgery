@@ -1,0 +1,872 @@
+---
+title: "Post Operative life expectancy"
+team: "Einstein Oyewole, Cole Hanniwell"
+output: 
+    html_document:
+      toc: true
+      toc_float: true
+      toc_depth: 5
+---
+
+## Problem Description
+
+Thoracic Surgery Refers to operations on organs in and around the chest area. These organs includes hearts, lungs and esophagus. Some example of thoracic surgery is heart transplants, lung transplant, removing parts(tumors, nodules etc.) of the lungs affected by cancer. The procedures can be carried out through video assisted thoracic surgery and robotic thoracic surgery where a surgeon usually uses a video/camera and either a console or inserting instruments into little holes to perform the surgery.This procedures can lead to longer periods of the patients being under and require more anesthetics.
+
+After having thoracic surgery, some common complications are atelectasis(complete or partial collapse of the entire lung), haemorrhage(escape of blood from a ruptured blood vessel), pulmonary oedema(excess fluid in the lungs), atrial fibrillation(quivering or irregular heartbeat), wound infection, pneumonia, persistent air leak, and respiratory failure. The main risk factors that lead to early mortality post surgery is Age i.e. the older you get the less likely you survive. Other risk factors are current smoking, underlying carcinoma, and chronic lung disease. 
+
+Anaesthetic and surgical techniques that helps early awakening and effective pain control will promote restoration of respiratory function and help avoid any complications(death). 
+
+Lung cancer is a type of cancer that begins in the lungs. it affects the abilities of the lungs to take in oxygen and release carbon dioxide. Lung Cancer is the leading cause of cancer deaths worldwide. Increasing the success rate (decreasing post operation early mortality) would be a significant improvement to this surgeries.
+
+
+## Data Description
+
+The data is dedicated to classification problem related to the post-operative life expectancy in the lung cancer patients: class 1 - death within one year after surgery, class 2 - survival.
+
+The data was collected retrospectively at Wroclaw Thoracic Surgery Centre for patients who underwent major lung resections for primary lung cancer in the years 2007 - 2011. 
+
+#### Variables and Their Meanings
+
+| Variables | Meaning |
+|:---------:|:---------------------|
+|    DGN    | Diagnosis - specific combination of ICD-10 codes for primary and secondary as well multiple tumours if any (DGN3,DGN2,DGN4,DGN6,DGN5,DGN8,DGN1)|
+|   PRE4    |  Forced vital capacity - FVC (numeric) |
+|   PRE5    |Volume that has been exhaled at the end of the first second of forced expiration - FEV1 (numeric) |
+|   PRE6    | Performance status - Zubrod scale (PRZ2,PRZ1,PRZ0) |
+|   PRE7    | Pain before surgery (T,F) |
+|   PRE8    | Haemoptysis before surgery (T,F)|
+|   PRE9    | Dyspnoea before surgery (T,F)|
+|   PRE10   | Cough before surgery (T,F) |
+|   PRE11   | Weakness before surgery (T,F) |
+|   PRE14   | T in clinical TNM - size of the original tumour, from OC11 (smallest) to OC14 (largest) (OC11,OC14,OC12,OC13) |
+|   PRE17   | Type 2 DM - diabetes mellitus (T,F) |
+|   PRE19   | MI up to 6 months (T,F) |
+|   PRE25   | PAD - peripheral arterial diseases (T,F) |
+|   PRE30   | Smoking (T,F) |
+|   PRE32   | Asthma (T,F) |
+|   AGE     | Age at surgery (numeric) |
+|***Risk1Y***|***1 year survival period - (T)rue value if died (T,F)*** |
+
+
+
+
+```{r echo=FALSE , warning=FALSE, include=FALSE}
+set.seed(2)
+if(! require("dplyr") ){ install.packages("dplyr") }
+if(! require("farff") ){ install.packages("farff") }
+if(! require("ggplot2") ){ install.packages("ggplot2") }
+if(! require("stringr") ){ install.packages("stringr") }
+if(! require("fastDummies") ){ install.packages("fastDummies") }
+if(! require("GGally") ){ install.packages("GGally") }
+if(! require("boot") ){ install.packages("boot") }
+if(! require("e1071") ){ install.packages("e1071") }
+if(! require("corrgram") ){ install.packages("corrgram") }
+if(! require("mclust") ){ install.packages("mclust") }
+if(! require("cluster") ){ install.packages("cluster") }
+if(! require("randomForest") ){ install.packages("randomForest") }
+if(! require("smotefamily") ){ install.packages("smotefamily") }
+if(! require("caret") ){ install.packages("caret") }
+library(plotly)
+library(caret)
+library(smotefamily)
+library(randomForest)
+library(corrgram)
+library(mclust)
+library(cluster)
+library(MASS)
+library(e1071)
+library(boot)
+library(GGally)
+library(dplyr)
+library(farff)
+library(ggplot2)
+library(stringr)
+library(fastDummies)
+
+```
+
+## Data Exploration
+
+#### Categorical Data
+
+##### Summary
+
+```{r echo=FALSE , warning=FALSE}
+df <- readARFF("ThoraricSurgery.arff", convert.to.logicals = )
+#head(df)
+#dim(df)
+summary(df)
+str(df)
+```
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(Risk1Yr) %>% group_by(Risk1Yr) %>% mutate(count = n())  %>% distinct(Risk1Yr, .keep_all = T)
+
+fig <- plot_ly(temp, x = ~Risk1Yr, y = ~count, type = "bar", name = "Diagnosis")
+fig <- fig %>% layout(title = "Risk of death",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+
+fig
+```
+
+##### Diagnosis
+
+Diagnosis—specific combination of ICD-10 codes for primary and secondary as well multiple tumors if any. THis is a nominal variable
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(DGN) %>% group_by(DGN) %>% mutate(count = n())  %>% distinct(DGN, .keep_all = T)
+
+fig <- plot_ly(temp, x = ~DGN, y = ~count, type = "bar", name = "Diagnosis")
+fig <- fig %>% layout(title = "Diagnosis",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+
+fig
+table(df$DGN, df$Risk1Yr)
+```
+
+##### Performance status
+
+Uses the Zubrod Scale. In medicine, performance status is an attempt to quantify cancer patients' general well-being and activities of daily life. Also known as ECOG or WHO score
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE6) %>% group_by(PRE6) %>% mutate(count = n())  %>% distinct(PRE6, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE6, y = ~count, type = "bar", name = "Performance status")
+fig <- fig %>% layout(title = "Performance status",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+
+fig
+table(df$PRE6, df$Risk1Yr)
+```
+##### Pain before Surgery
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE7) %>% group_by(PRE7) %>% mutate(count = n())  %>% distinct(PRE7, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE7, y = ~count, type = "bar", name = "Pain before Surgery")
+fig <- fig %>% layout(title = "Pain before Surgery",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+
+fig
+
+table(df$PRE7, df$Risk1Yr)
+```
+
+
+##### Haemoptysis before Surgery
+
+Whether the patient coughs blood before surgery
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE8) %>% group_by(PRE8) %>% mutate(count = n())  %>% distinct(PRE8, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE8, y = ~count, type = "bar", name = "Pain before Surgery")
+fig <- fig %>% layout(title = "(Haemoptysis) coughs blood before surgery",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+
+fig
+
+table(df$PRE8, df$Risk1Yr)
+```
+
+
+##### Dyspnea before Surgery
+
+Difficult or laboured breathing before surgery
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE9) %>% group_by(PRE9) %>% mutate(count = n())  %>% distinct(PRE9, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE9, y = ~count, type = "bar", name = "Dyspnea before Surgery")
+fig <- fig %>% layout(title = "laboured breathing before surgery",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig
+
+table(df$PRE9, df$Risk1Yr)
+```
+
+
+##### Cough before Surgery
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE10) %>% group_by(PRE10) %>% mutate(count = n())  %>% distinct(PRE10, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE10, y = ~count, type = "bar", name = "Pain before Surgery")
+fig <- fig %>% layout(title = "(Haemoptysis) coughs blood before surgery",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig
+
+table(df$PRE10, df$Risk1Yr)
+```
+
+
+
+##### Weakness before Surgery
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE11) %>% group_by(PRE11) %>% mutate(count = n())  %>% distinct(PRE11, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE11, y = ~count, type = "bar", name = "Weakness before Surgery")
+fig <- fig %>% layout(title = "Weakness before Surgery",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig
+
+table(df$PRE11, df$Risk1Yr)
+```
+
+
+##### Tumor Size
+
+The TNM system is the most widely used cancer staging system. Most hospitals and medical centers use the TNM system as their main method for cancer reporting. This variable corresponds to T in TNM system which refers to the primary tumor. 
+
+  - OC11, OC12, OC13, OC14: Refers to the size and extent of the main tumor. From OC11 (smallest) to OC14 (largest), the more it has grown into nearby tissues.
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE14) %>% group_by(PRE14) %>% mutate(count = n())  %>% distinct(PRE14, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE14, y = ~count, type = "bar", name = "Tumor size")
+fig <- fig %>% layout(title = "Tumor size",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig
+table(df$PRE14, df$Risk1Yr)
+```
+
+##### Type 2 DM (Diabetes Mellitus)
+
+Diabetes mellitus is a disease that prevents your body from properly using the energy from the food you eat. In more detail, the pancreas makes insulin, but it either doesn't produce enough, or the insulin doesn't work properly.
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE17) %>% group_by(PRE17) %>% mutate(count = n())  %>% distinct(PRE17, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE17, y = ~count, type = "bar", name = "Diabetes mellitus")
+fig <- fig %>% layout(title = "Diabetes mellitus",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig
+table(df$PRE17, df$Risk1Yr)
+```
+
+
+##### MI(myocardial infarction) up to 6 months
+
+Whether they have had a heart attack in the last 6 months
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE19) %>% group_by(PRE19) %>% mutate(count = n())  %>% distinct(PRE19, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE19, y = ~count, type = "bar", name = "MI(myocardial infarction) up to 6 months")
+fig <- fig %>% layout(title = "heart attack in the last 6 months",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig
+table(df$PRE19, df$Risk1Yr)
+```
+
+##### Peripheral Arterial diseases
+
+PAD is a common circulatory problem in which narrowed arteries reduce blood flow to your limbs
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE25) %>% group_by(PRE25) %>% mutate(count = n())  %>% distinct(PRE25, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE25, y = ~count, type = "bar", name = "Peripheral Arterial diseases")
+fig <- fig %>% layout(title = "Peripheral Arterial diseases",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig
+table(df$PRE25, df$Risk1Yr)
+```
+
+##### Smoking
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE30) %>% group_by(PRE30) %>% mutate(count = n())  %>% distinct(PRE30, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE30, y = ~count, type = "bar", name = "Smoking")
+fig <- fig %>% layout(title = "Smoking",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig
+table(df$PRE30, df$Risk1Yr)
+```
+
+
+##### Asthma
+
+Asthma is a respiratory condition in which your airways narrow and swell and may produce extra mucus (difficulties in breathing).
+
+```{r echo=FALSE , warning=FALSE}
+temp = df %>% dplyr::select(PRE32) %>% group_by(PRE32) %>% mutate(count = n())  %>% distinct(PRE32, .keep_all = T)
+#temp
+fig <- plot_ly(temp, x = ~PRE32, y = ~count, type = "bar", name = "Asthma")
+fig <- fig %>% layout(title = "Asthma",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+fig
+table(df$PRE32, df$Risk1Yr)
+```
+
+
+#### Numerical data
+**Correlation**
+```{r echo=FALSE , warning=FALSE}
+ggpairs(df[,c("AGE", "PRE4", "PRE5", "Risk1Yr")], aes(color = Risk1Yr, alpha = 0.4))
+```
+
+
+##### Forced Vital Capacity
+
+FVC is the amount of air that can be forcibly exhaled from your lungs after taking the deepest breath possible, as measured by spirometry.
+
+
+
+##### Forced Expiration Volume
+
+Volume that has been exhaled at the end of the first second of forced expiration. In lay mans terms, it measures how much air a person can exhale during a forced breath.
+
+
+## Preprocessing and Bootstrapping
+
+```{r echo=FALSE , warning=FALSE}
+
+
+#######################################
+###########Preprocessing###############
+#######################################
+#######################################
+
+# Converting to logicals
+df$PRE7 = as.logical(df$PRE7)
+df$PRE8 = as.logical(df$PRE8)
+df$PRE9 = as.logical(df$PRE9)
+df$PRE10 = as.logical(df$PRE10)
+df$PRE11 = as.logical(df$PRE11)
+df$PRE17 = as.logical(df$PRE17)
+df$PRE19 = as.logical(df$PRE19)
+df$PRE25 = as.logical(df$PRE25)
+df$PRE30 = as.logical(df$PRE30)
+df$PRE32 = as.logical(df$PRE32)
+df$Risk1Yr = as.logical(df$Risk1Yr)
+
+# Renaming variables And getting ordinal encoding for Tumor size
+df = df %>% mutate("size_of_tumor" = as.integer(str_sub(PRE14, -1L )), "Performance_status" = as.integer(str_sub(PRE6, -1L ))) %>% dplyr::select(-PRE14, -PRE6) %>% rename( "Diagnosis" = "DGN", 
+              "FVC" = "PRE4",
+              "FEV1" = "PRE5",
+              "Pain_before_surgery" ="PRE7",
+              "Haemoptysis_before_surgery" = "PRE8",
+              "Dyspnoea_before_surgery" = "PRE9",
+              "Cough_before_surgery" = "PRE10",
+              "Weakness_before_surgery" = "PRE11",
+              "Diabetes_mellitus" = "PRE17",
+              "MI" = "PRE19",
+              "PAD" = "PRE25",
+              "Smoking" = "PRE30",
+              "Asthma" = "PRE32")
+
+# Getting dummy variable for Diagnosis
+
+df = dummy_columns(df, select_columns = c("Diagnosis"), remove_first_dummy = T)
+df = df %>% dplyr::select(-Diagnosis)
+
+# Convert Logicals to Numeric
+cols <- sapply(df, is.logical)
+df[,cols] <- lapply(df[,cols], as.numeric)
+
+# Checking for NA's 
+print('Checking NA')
+cat("Count of NA:")
+sum(is.na(df))
+
+
+
+# Outliers
+# boxplot(df$PRE5, main = "FEV1")
+df = df[df$FEV1 < 20,]
+
+```
+
+```{r echo=FALSE , warning=FALSE}
+#######################################
+###########Bootstrapping###############
+#######################################
+#######################################
+
+# stratified data split
+cat("Resampling . . .")
+temp = SMOTE(df, df$Risk1Yr, K = 5, dup_size = 0)
+temp.set = temp$data %>% dplyr::select(-"class")
+#dim(temp.set)
+#summary(as.factor(temp.set$Risk1Yr))
+cat("Stratified split . . .")
+train.index = createDataPartition(temp.set$Risk1Yr, p = 0.7, list = F)
+train.set <- temp.set[ train.index,]
+test.set  <- temp.set[-train.index,]
+
+temp = temp.set %>% dplyr::select(Risk1Yr) %>% group_by(Risk1Yr) %>% mutate(count = n())  %>% distinct(Risk1Yr, .keep_all = T)
+
+fig <- plot_ly(temp, x = ~Risk1Yr, y = ~count, type = "bar", name = "Diagnosis")
+fig <- fig %>% layout(title = "Risk of death",
+         xaxis = list(title = ""),
+         yaxis = list(title = ""))
+
+fig
+
+# Removing unnecassary variables from work env
+rm(df)
+rm(temp)
+```
+
+## Modeling
+
+#### SVM Linear
+
+```{r echo=FALSE , warning=FALSE}
+### linear
+
+myf1 <- function(actual, pred){
+  1 - my_f1score(pred, actual)
+}
+
+my_recall<- function(pred, actual){
+  l <- table(actual, pred)
+  return(l[1,1]/(l[1,1] + l[2,1]))
+}
+
+my_precision<- function(pred, actual){
+  l <- table(actual, pred)
+  return(l[1,1]/(l[1,1] + l[1,2]))
+}
+
+my_f1score<- function(pred, actual){
+  2*(my_recall(pred, actual)* my_precision(pred, actual))/(my_recall(pred, actual) + my_precision(pred, actual))
+}
+
+## Costs Hyperparameter Tuning
+# costs: cost of constraints violation, it is the ‘C’-constant of the regularization term in the Lagrange formulation 
+tune.fit.lin <- tune(svm, as.factor(Risk1Yr) ~ ., data = train.set, kernel = "linear", type = "C-classification", scale = F, ranges = list(cost = seq(0.01, 10, length.out = 13)), tunecontrol = tune.control(error.fun = myf1))
+tune.fit.lin$best.parameters
+
+fit.svm_lin <- svm(as.factor(Risk1Yr) ~ ., data = train.set, kernel = "linear", type = "C-classification", cost = tune.fit.lin$best.parameter$cost, scale = F)
+
+cat("Training evaluation\n")
+#training error
+pred <- predict(fit.svm_lin, train.set)
+cat("Misclassification Error:")
+mean(pred != train.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(pred, train.set$Risk1Yr)
+cat("Recall:")
+my_recall(pred, train.set$Risk1Yr)
+cat("Precision:")
+my_precision(pred, train.set$Risk1Yr)
+
+cat("Testing evaluation\n")
+#test error
+pred <- predict(fit.svm_lin, test.set)
+cat("Misclassification Error:")
+mean(pred != test.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(pred, test.set$Risk1Yr)
+cat("Recall:")
+my_recall(pred, test.set$Risk1Yr)
+cat("Precision:")
+my_precision(pred, test.set$Risk1Yr)
+
+```
+#### SVM Radial
+
+```{r echo=FALSE , warning=FALSE}
+
+# costs: cost of constraints violation, it is the ‘C’-constant of the regularization term in the Lagrange formulation 
+# gamma: parameter needed for all kernels except linear
+
+tune.fit.rad <- tune(svm, as.factor(Risk1Yr) ~ ., data = train.set, scale = F, kernel = "radial", ranges = list(cost = seq(0.01, 20, length.out = 15),gamma=c(0.01,0.1, 0.25, 0.5,1,2,3,4)), tunecontrol = tune.control(error.fun = myf1))
+tune.fit.rad$best.parameters
+
+fit.svm_rad <- svm(as.factor(Risk1Yr) ~ ., data = train.set, kernel = "radial", scale = F, cost = tune.fit.rad$best.parameter$cost, gamma = tune.fit.rad$best.parameter$gamma)
+
+cat("Training evaluation\n")
+#training error
+pred <- predict(fit.svm_rad, train.set)
+cat("Misclassification Error:")
+mean(pred != train.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(pred, train.set$Risk1Yr)
+cat("Recall:")
+my_recall(pred, train.set$Risk1Yr)
+cat("Precision:")
+my_precision(pred, train.set$Risk1Yr)
+
+cat("Testing evaluation\n")
+#test error
+pred <- predict(fit.svm_rad, test.set)
+cat("Misclassification Error:")
+mean(pred != test.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(pred, test.set$Risk1Yr)
+cat("Recall:")
+my_recall(pred, test.set$Risk1Yr)
+cat("Precision:")
+my_precision(pred, test.set$Risk1Yr)
+
+```
+
+
+
+**Clustering**
+#### Clustering Single linkage Method
+```{r echo=FALSE , warning=FALSE}
+train.set.x <- train.set %>% dplyr::select(-Risk1Yr)
+x.dist <- dist(scale(train.set.x), method = "minkowski")
+
+### Single linkage ##
+x.hclust.s <- hclust(x.dist, method="single")
+#plot(x.hclust.s,  hang=-1, main ="", sub ="", frame.plot= TRUE, xlab = "", ylab ="Dissimilarity")
+labels = cutree(x.hclust.s, k =2)
+labels = labels - 1
+cat("Misclassification Error:")
+mean(labels != train.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(labels, train.set$Risk1Yr)
+cat("Recall:")
+my_recall(labels, train.set$Risk1Yr)
+cat("Precision:")
+my_precision(labels, train.set$Risk1Yr)
+
+```
+
+#### Clustering Complete
+```{r echo=FALSE , warning=FALSE}
+
+### Average Linkage ##3
+x.hclust.c <- hclust(x.dist, method="complete")
+#plot(x.hclust.a,  hang=-1, main ="", sub ="", frame.plot= TRUE, xlab = "", ylab ="Dissimilarity")
+
+labels = cutree(x.hclust.c, k =2)
+labels = labels - 1
+summary(as.factor(labels))
+cat("Misclassification Error:")
+mean(labels != train.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(labels, train.set$Risk1Yr)
+cat("Recall:")
+my_recall(labels, train.set$Risk1Yr)
+cat("Precision:")
+my_precision(labels, train.set$Risk1Yr)
+```
+
+#### Clustering Average
+
+```{r echo=FALSE , warning=FALSE}
+
+### Average Linkage ##3
+x.hclust.a <- hclust(x.dist, method="average")
+#plot(x.hclust.a,  hang=-1, main ="", sub ="", frame.plot= TRUE, xlab = "", ylab ="Dissimilarity")
+
+labels = cutree(x.hclust.a, k =2)
+labels = labels - 1
+
+cat("Misclassification Error:")
+mean(labels != train.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(labels, train.set$Risk1Yr)
+cat("Recall:")
+my_recall(labels, train.set$Risk1Yr)
+cat("Precision:")
+my_precision(labels, train.set$Risk1Yr)
+```
+
+#### Clustering Top bottom
+```{r echo=FALSE , warning=FALSE}
+
+### Top bottom
+clst <- diana(train.set.x, metric = "minkowski")
+labels <- cutree(as.hclust(clst), k = 2)
+labels = labels - 1
+
+cat("Misclassification Error:")
+mean(labels != train.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(labels, train.set$Risk1Yr)
+cat("Recall:")
+my_recall(labels, train.set$Risk1Yr)
+cat("Precision:")
+my_precision(labels, train.set$Risk1Yr)
+```
+
+#### LDA
+```{r echo=FALSE , warning=FALSE}
+control <- trainControl(method="cv", number=5)
+fit.lr.full <- train(as.factor(Risk1Yr) ~., data=as.data.frame(train.set), method="glm",family="binomial", trControl=control)
+#summary(fit.lr.full)
+#lda.fit <- lda(, data = train.set)
+
+cat("Training evaluation\n")
+#training error
+cat("Misclassification Error:")
+pred <- predict(fit.lr.full, train.set)
+mean(pred != train.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(pred, train.set$Risk1Yr)
+cat("Recall:")
+my_recall(pred, train.set$Risk1Yr)
+cat("Precision:")
+my_precision(pred, train.set$Risk1Yr)
+
+cat("Testing evaluation\n")
+#test error
+pred <- predict(fit.lr.full, test.set)
+cat("Misclassification Error:")
+mean(pred != test.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(pred, test.set$Risk1Yr)
+cat("Recall:")
+my_recall(pred, test.set$Risk1Yr)
+cat("Precision:")
+my_precision(pred, test.set$Risk1Yr)
+```
+
+
+
+#### Bagging: Random Forest
+
+```{r  echo=FALSE}
+
+ls_try = c(3,round(sqrt(dim(train.set)[2])), round(1.5*sqrt(dim(train.set)[2])))
+grid.rf = expand.grid(mtry = ls_try, nodesize = seq(1,5), maxnodes = seq(5,50,5), sampsize = seq(60,80,5) )
+
+temp_df = as.data.frame(grid.rf)
+
+grid.rf["OOB Error"] = NA
+grid.rf["Accuracy"] = NA
+grid.rf["Precision"] = NA
+grid.rf["Recall"] = NA
+grid.rf["F1 Error"] = NA
+
+for(i in 1:nrow(grid.rf)){
+  mod <- randomForest(as.factor(Risk1Yr) ~ ., data = train.set, importance=TRUE, mtry = grid.rf[i,"mtry"],  nodesize = grid.rf[i,"nodesize"], maxnodes = grid.rf[i,"maxnodes"], sampsize = grid.rf[i, "sampsize"], ntree = 800)
+  grid.rf[i, "OOB Error"] <- mean(mod$err.rate[,1])
+  pred <- predict(mod, test.set)
+  grid.rf[i, "Accuracy"] <- mean(pred == test.set$Risk1Yr)
+  grid.rf[i, "F1 Error"] <- my_f1score(pred, test.set$Risk1Y)
+  grid.rf[i, "Recall"] <- my_recall(pred, test.set$Risk1Y)
+  grid.rf[i, "Precision"] <- my_precision(pred, test.set$Risk1Y)
+  
+}
+
+grid.rf <-grid.rf[order( grid.rf$`OOB Error`, - grid.rf$Recall, - grid.rf$Accuracy, - grid.rf$`F1 Error`),]
+cat("Tuning parameters and results")
+head(grid.rf)
+
+
+result.rf <- randomForest(as.factor(Risk1Yr) ~ ., data = train.set, importance=TRUE, mtry = 7, nodesize = 1, maxnodes = 45, sampsize = 80, ntree = 800)
+
+cat("Training evaluation\n")
+#training error
+cat("Misclassification Error:")
+pred <- predict(result.rf, train.set)
+mean(pred != train.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(pred, train.set$Risk1Yr)
+cat("Recall:")
+my_recall(pred, train.set$Risk1Yr)
+cat("Precision:")
+my_precision(pred, train.set$Risk1Yr)
+
+cat("Testing evaluation\n")
+#test error
+pred <- predict(result.rf, test.set)
+cat("Misclassification Error:")
+mean(pred != test.set$Risk1Yr)
+cat("F1 Score:")
+my_f1score(pred, test.set$Risk1Yr)
+cat("Recall:")
+my_recall(pred, test.set$Risk1Yr)
+cat("Precision:")
+my_precision(pred, test.set$Risk1Yr)
+
+varImpPlot(result.rf)
+```
+
+#### PCA
+
+##### Analysis of Principal components
+
+```{r echo=FALSE , warning=FALSE , warning=FALSE}
+ld <- temp.set[temp.set$AGE != 21, ]
+df.x <- ld %>% dplyr::select(-Risk1Yr)
+
+pca_2 <- prcomp(df.x)
+cat("Here's a plot showing the loadings of the PCA")
+biplot(pca_2, scale = 0)
+
+df.pca <- princomp(df.x, cor=FALSE)
+cat("loadings")
+round(loadings(df.pca)[,1:5],8) ## keep enough decimal points 
+cat("Component variances captured")
+plot(df.pca)
+#summary(df.pca)
+
+
+df.cov <- cov(df.x)
+result.eigen <- eigen(df.cov)
+
+
+pc_transformed = as.matrix(df.x) %*% t(t(result.eigen$vectors[, c(1,2,3)]))
+
+pc_transformed = as.data.frame(pc_transformed)
+pc_transformed['V4'] = as.factor(ld$Risk1Yr)
+
+
+#ggplot(data = as.data.frame(pc_transformed) ) + geom_jitter(aes(x = V1, y = V2, colour = V3))
+
+plot_ly(x=pc_transformed$V1, y=pc_transformed$V2, z=pc_transformed$V3, type="scatter3d", mode="markers", color=pc_transformed$V4)
+
+pc_transformed = as.matrix(df.x) %*% t(t(result.eigen$vectors[, c(1,2)]))
+
+pc_transformed = as.data.frame(pc_transformed)
+pc_transformed['V3'] = as.factor(ld$Risk1Yr)
+
+
+ggplot(data = as.data.frame(pc_transformed) ) + geom_jitter(aes(x = V1, y = V2, colour = V3))
+```
+
+
+##### PCA Fit on RF
+
+```{r  echo=FALSE, warning=FALSE}
+
+pc_transformed = as.matrix(df.x) %*% t(t(result.eigen$vectors[, c(1,2,3,4,5)]))
+
+pc_transformed = as.data.frame(pc_transformed)
+pc_transformed['V6'] = as.factor(ld$Risk1Yr)
+
+
+ls_try = c(3,round(sqrt(dim(train.set)[2])), round(1.5*sqrt(dim(train.set)[2])))
+grid.rf = expand.grid(mtry = ls_try, nodesize = seq(1,5), maxnodes = seq(5,50,5), sampsize = seq(60,80,5) )
+
+temp_df = as.data.frame(grid.rf)
+
+grid.rf["OOB Error"] = NA
+grid.rf["Accuracy"] = NA
+grid.rf["Precision"] = NA
+grid.rf["Recall"] = NA
+grid.rf["F1 Error"] = NA
+
+for(i in 1:nrow(grid.rf)){
+  mod <- randomForest(as.factor(V6) ~ ., data = pc_transformed, importance=TRUE, mtry = grid.rf[i,"mtry"],  nodesize = grid.rf[i,"nodesize"], maxnodes = grid.rf[i,"maxnodes"], sampsize = grid.rf[i, "sampsize"], ntree = 800)
+  summary(mod)
+  grid.rf[i, "OOB Error"] <- mean(mod$err.rate[,1])
+  pred <- predict(mod, pc_transformed)
+  grid.rf[i, "Accuracy"] <- mean(pred == pc_transformed$V6)
+  grid.rf[i, "F1 Error"] <- my_f1score(pred, pc_transformed$V6)
+  grid.rf[i, "Recall"] <- my_recall(pred, pc_transformed$V6)
+  grid.rf[i, "Precision"] <- my_precision(pred, pc_transformed$V6)
+  
+}
+
+grid.rf <-grid.rf[order( grid.rf$`OOB Error`, - grid.rf$Recall, - grid.rf$Accuracy, - grid.rf$`F1 Error`),]
+cat("PCA tuning results")
+head(grid.rf, 15)
+
+set.seed(200)
+result.rf <- randomForest(as.factor(V6) ~ ., data = pc_transformed[train.index,], importance=TRUE, mtry = 5, nodesize = 2, maxnodes = 30, sampsize = 80, ntree = 800)
+
+cat("Training evaluation\n")
+#training error
+pred <- predict(result.rf, pc_transformed[train.index,])
+cat("Misclassification Error:")
+mean(pred != pc_transformed[train.index,]$V6)
+cat("F1 Score:")
+my_f1score(pred, pc_transformed[train.index,]$V6)
+cat("Recall:")
+my_recall(pred, pc_transformed[train.index,]$V6)
+cat("Precision:")
+my_precision(pred, pc_transformed[train.index,]$V6)
+
+cat("Testing evaluation\n")
+pred <- predict(result.rf, pc_transformed[-train.index,])
+cat("Misclassification Error:")
+mean(pred != pc_transformed[-train.index,]$V6)
+cat("F1 Score:")
+my_f1score(pred, pc_transformed[-train.index,]$V6)
+cat("Recall:")
+my_recall(pred, pc_transformed[-train.index,]$V6)
+cat("Precision:")
+my_precision(pred, pc_transformed[-train.index,]$V6)
+
+head(result.rf$err.rate)
+
+```
+
+
+```{r echo=FALSE , warning=FALSE}
+# costs: cost of constraints violation, it is the ‘C’-constant of the regularization term in the Lagrange formulation 
+# gamma: parameter needed for all kernels except linear
+
+tune.fit.rad <- tune(svm, as.factor(V6) ~ ., data = pc_transformed[train.index,], scale = F, kernel = "radial", ranges = list(cost = seq(0.01, 20, length.out = 15),gamma=c(0.01,0.1, 0.25, 0.5,1,2,3,4)), tunecontrol = tune.control(error.fun = myf1))
+tune.fit.rad$best.parameters
+
+fit.svm_rad <- svm(as.factor(V6) ~ ., data = pc_transformed[train.index,], kernel = "radial", scale = F, cost = tune.fit.rad$best.parameter$cost, gamma = tune.fit.rad$best.parameter$gamma)
+
+cat("Training evaluation\n")
+#training error
+
+
+pred <- predict(fit.svm_rad, na.omit(pc_transformed[train.index,]))
+cat("Misclassification Error:")
+mean(pred != na.omit(pc_transformed[train.index,])$V6)
+cat("F1 Score:")
+my_f1score(pred, na.omit(pc_transformed[train.index,])$V6)
+cat("Recall:")
+my_recall(pred, na.omit(pc_transformed[train.index,])$V6)
+cat("Precision:")
+my_precision(pred, na.omit(pc_transformed[train.index,])$V6)
+
+cat("Testing evaluation\n")
+#test error
+pred <- predict(fit.svm_rad, pc_transformed[-train.index,])
+cat("Misclassification Error:")
+mean(pred != pc_transformed[-train.index,]$V6)
+cat("F1 Score:")
+my_f1score(pred, pc_transformed[-train.index,]$V6)
+cat("Recall:")
+my_recall(pred, pc_transformed[-train.index,]$V6)
+cat("Precision:")
+my_precision(pred, pc_transformed[-train.index,]$V6)
+```
+
+#### 5-fold CV on Random Forest PCA
+
+```{r echo=FALSE , warning=FALSE}
+
+tr <- trainControl(method = "cv", number = 5)
+train(as.factor(V6) ~ ., data = pc_transformed[train.index,],method="rf",trControl= tr)
+```
+
+
+## Reference
+
+**Domain**
+- https://oxfordmedicine.com/view/10.1093/med/9780199653478.001.0001/med-9780199653478-chapter-37#:~:text=Common%20complications%20after%20thoracic%20surgery,air%20leak%2C%20and%20respiratory%20failure.
+
+- https://thorax.bmj.com/content/68/9/826
+
+- https://www.heart.org/en/health-topics/atrial-fibrillation/what-is-atrial-fibrillation-afib-or-af
+
+- https://www.cancercenter.com/treatment-options/surgery/thoracic-surgery#:~:text=Orthopedic%20oncology-,Thoracic%20surgery,the%20lung%20affected%20by%20cancer.
+
+- Zubrod Scale https://en.wikipedia.org/wiki/Performance_status
+
+- TNM staging for lung cancer https://www.cancer.gov/about-cancer/diagnosis-staging/staging
+
+**Data**
+- https://archive.ics.uci.edu/ml/datasets/Thoracic+Surgery+Data#
